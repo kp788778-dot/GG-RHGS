@@ -12,9 +12,8 @@ allow you to reformat the total list from CivilPro into an excel table.
 
 
 HOW TO USE THIS CODE:
-1. ON CIVILPRO, SELECT THE TEST REQUESTS THAT YOU WANT TO LOOK AT. CLICK ON THE PRINTER ON THE RIGHT
-HAND SIDE, AND THEN PRESS 'Test Request (pdf)'. SAVE THIS ON YOUR COMPUTER.
 1. On CivilPro, select the test requests that you want to look at. I usually press the box in the top right to select all.
+2. Click on the printer on the right hand side, and then press 'Test Requests (pdf)'. Save this on your computer.
 3. Upload that PDF document (usually called TRs 1_2_etc.pdf) into the drag and drop box.
 4. This will take a minute to load. Once loaded, a preview box of the results will be visable. 
 5. At the very bottom, there is a button labelled "download excel file". Press this to download.
