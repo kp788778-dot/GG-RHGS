@@ -1,0 +1,155 @@
+'''
+WHAT IS THIS?
+- INSTEAD OF ENTERING IN TESTS MANUALLY INTO THE '02# RHGS Project - Testing requirement.xlsx' sheet, just wack the described
+  pdf into this code and it will make a csv with all the data already entered.
+
+
+HOW TO USE THIS CODE:
+1. SAVE THIS CODE AS A FILE ON YOUR COMPUTER INSIDE AN EMPTY FOLDER.
+2. ON CIVILPRO, SELECT THE TEST REQUESTS THAT YOU WANT TO LOOK AT. CLICK ON THE PRINTER ON THE RIGHT
+HAND SIDE, AND THEN PRESS 'Test Request (pdf)'. SAVE THIS ON YOUR COMPUTER.
+3. CHANGE THE BELOW 'pdf_path' INTO THE ACTUAL PATH OF YOUR COMPUTER WHERE YOU HAVE SAVED THE PDF FILE.
+4. CHANGE THE BELOW 'output_csv' INTO WHAT YOU WANT TO CALL YOUR OUTPUT. 
+***THIS NEEDS TO BE A NEW NAME, THIS CODE CAN NOT OVERWRITE (YET)
+5. THE CSV FILE (SHOULD) APPEAR. EXPAND THE CELLS AND THEN YOU SHOULD BE ABLE TO COPY AND PASTE IT IN
+6. IF YOU CAN'T USE THIS, ASK KIERAN (I DESIGNED IT)
+'''
+
+
+
+import pdfplumber
+import pandas as pd
+import re
+from collections import Counter
+
+
+pdf_path = r"C:\Users\kpoulton\Downloads\TRs 1_2_etc (2).pdf"
+output_csv = "test_requests_28_Jan_26 (Added Lot no. and Lot Type).csv"
+
+rows = []
+
+# If it cuts the description early, this should replace it with the full name. This is just because I can only get pdfplumber can only read one line at a time 
+# If i have forgotten anything, just add the full name in here later as a string
+full_names = {
+    "WA 115.1: Particle Size Distribution": "WA 115.1: Particle Size Distribution: Sieving and Decantation Method",
+    "WA 141.1: Determination of the California": "WA 141.1: Determination of the California Bearing Ratio of a Soil: Standard Laboratory Method for a Remoulded Specimen",
+    "WA 115.2: Particle Size Distribution: Abbreviated": "WA 115.2: Particle Size Distribution: Abbreviated Method for Coarse and Medium Grained Soils",
+    "WA 133.1: Dry Density/Moisture Content": "WA 133.1: Dry Density/Moisture Content Relationship: Modified Compaction Fine and Medium Grained Soils",
+    "WA 324.2: Determination of Field Density": "WA 324.2: Determination of Field Density: Nuclear Method",
+    "Construction Moisture Content (WA 110.1)": "Construction Moisture Content (WA 110.1) - Convection Oven Method",
+    "Construction Moisture Content (WA 110.2)": "Construction Moisture Content (WA 110.2) - Microwave Oven Method"
+}
+
+# Function that will take the above and make the names actually what theyre supposed to be
+def normalize_method_name(name):
+    for key, full in full_names.items():
+        if key in name:
+            return full
+    return name
+
+# Function to make the 'Field Density' Packages
+def replace_field_density(methods):
+    # Count occurrences
+    count_133 = sum(c for m, c in methods if "WA 133.1" in m)
+    count_134 = sum(c for m, c in methods if "WA 134.1" in m)
+    count_324 = sum(c for m, c in methods if "WA 324.2" in m)
+
+    # Treat WA 324.2 as equivalent to WA 134.1
+    # There might be some more stuff with 115.2, don't know. Just don't raise that TR and it'll be fine.
+    count_134_combined = count_134 + count_324
+
+    # Mapping of (WA 133.1 count, WA 134.1/324.2 count)
+    # Again, if there are any more bundles that get added by Western Geotechnics then add them in here. 
+    mapping = {
+        (2, 6): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 6 NDM Sites x 2 MDD",
+        (2, 3): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 3 NDM Sites x 2 MDD",
+        (3, 3): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 3 NDM Sites x 3 MDD",
+        (3, 6): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 6 NDM Sites x 3 MDD",
+        (3, 9): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 9 NDM Sites x 3 MDD",
+        (6, 6): "Field Density Lots inc Density Ratio Report (WA 324.2, 110.1, 115.2, 133.1 & 134.1) - 6 NDM Sites x 6 MDD"
+    }
+
+    key = (count_133, count_134_combined)
+    if key in mapping:
+        # Remove rows for WA 133.1, WA 134.1, WA 324.2
+        methods = [(m, c) for m, c in methods if "WA 133.1" not in m and "WA 134.1" not in m and "WA 324.2" not in m]
+        # Add summary row
+        methods.append((mapping[key], 1))
+
+    return methods
+
+with pdfplumber.open(pdf_path) as pdf:
+    for page in pdf.pages:
+        text = page.extract_text()
+        if not text:
+            continue
+
+        # TR number 
+        tr_match = re.search(r"TR:\s*(\d+)", text)
+        if not tr_match:
+            continue
+        tr = tr_match.group(1)
+
+
+        # Lot no. and Lot type
+        lot_match = re.search(r"Lot No:\s*([A-Za-z0-9\-]+)", text)
+        lot_no = lot_match.group(1) if lot_match else ""
+        lot_type = lot_no[:2] if lot_no else ""
+
+        # When Req'd date
+        date_match = re.search(r"When Req'd\s+\w+,\s+(\d{2}\s+\w+\s+\d{4})", text)
+        when_reqd = (
+            pd.to_datetime(date_match.group(1), format="%d %b %Y").date()
+            if date_match else None
+        )
+
+        location_method = None
+        loc_match = re.search(r"Location Method:\s*([A-Za-z ]+)", text)
+        if loc_match:
+            location_method = loc_match.group(1).strip().lower()
+
+        # Extract test methods
+        methods = []
+
+        if location_method == "tester locates":
+            for count, std, code, desc in re.findall(
+                r"(\d+)\s+(WA|AS)\s+([\d\.]+):\s+([^\n]+)", text
+            ):
+                method_name = f"{std} {code}: {desc.strip()}"
+                method_name = normalize_method_name(method_name)
+                methods.append((method_name, int(count)))
+
+        elif location_method == "location specified":
+            numbered = re.findall(
+                r"\d+-\d+\s+(WA|AS)\s+([\d\.]+):\s+([^\n]+)", text
+            )
+            if numbered:
+                counter = Counter()
+                for std, code, desc in numbered:
+                    clean_desc = re.sub(r"\s+0\.0+.*$", "", desc).strip()
+                    method_name = f"{std} {code}: {clean_desc}"
+                    method_name = normalize_method_name(method_name)
+                    counter[method_name] += 1
+                for method, cnt in counter.items():
+                    methods.append((method, cnt))
+
+        # Replace field density combos
+        methods = replace_field_density(methods)
+
+        # No tests case 
+        if not methods:
+            rows.append([tr, when_reqd, "", "not used", lot_no, lot_type])
+        else:
+            for method, count in methods:
+                rows.append([tr, when_reqd, method, count, lot_no, lot_type])
+
+df = pd.DataFrame(
+    rows,
+    columns=["TR", "When Req'd (date)", "Test method", "No. tests","Lot no.","Lot Type"]
+)
+
+df.to_csv(output_csv, index=False)
+print(f"CSV written to {output_csv}")
+
+
+#look in the folder where this code is stored. Your CSV file should be there. Make sure to open with excel.
